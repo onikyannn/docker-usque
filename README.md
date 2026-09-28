@@ -3,24 +3,20 @@
 
 基于 [usque](https://github.com/Diniboy1123/usque) 的 Docker 镜像，用来在容器中运行 Cloudflare WARP / ZeroTrust MASQUE 代理。
 
-- Docker Hub：`superng6/usque`
+- GitHub Container Registry：`ghcr.io/onikyannn/usque`
 - 支持：`socks`（SOCKS5）、`http-proxy`（HTTP CONNECT）、`l4-socks`、`l4-http-proxy`、`nativetun`、`portfw`、`register`、`enroll`
 
 ---
 ```
-GitHub：https://github.com/SuperNG6/docker-usque
-
-Docker Hub：https://hub.docker.com/r/superng6/usque
+GitHub：https://github.com/onikyannn/docker-usque
 ```
 
 ## 镜像信息
 
 ```bash
 # 拉取镜像
-docker pull superng6/usque:latest
-或
-docker pull ghcr.io/superng6/usque:latest
-````
+docker pull ghcr.io/onikyannn/usque:latest
+```
 
 ---
 
@@ -32,7 +28,7 @@ docker pull ghcr.io/superng6/usque:latest
 services:
   # SOCKS5 代理（默认 0.0.0.0:1080）
   usque-socks:
-    image: superng6/usque:latest
+    image: ghcr.io/onikyannn/usque:latest
     container_name: usque-socks
     restart: unless-stopped
     environment:
@@ -57,7 +53,7 @@ services:
 
   # HTTP CONNECT 代理（默认 0.0.0.0:8000）
   usque-http:
-    image: superng6/usque:latest
+    image: ghcr.io/onikyannn/usque:latest
     container_name: usque-http
     restart: unless-stopped
     environment:
@@ -79,7 +75,7 @@ services:
 
   # L4 SOCKS5 代理（TCP-only，更轻量；示例使用宿主机 1081，避免和 usque-socks 冲突）
   usque-l4-socks:
-    image: superng6/usque:latest
+    image: ghcr.io/onikyannn/usque:latest
     container_name: usque-l4-socks
     restart: unless-stopped
     environment:
@@ -98,7 +94,7 @@ services:
 
   # TUN 模式（高级用法，需要 /dev/net/tun 和 NET_ADMIN）
   usque-tun:
-    image: superng6/usque:latest
+    image: ghcr.io/onikyannn/usque:latest
     container_name: usque-tun
     restart: "no"
     environment:
@@ -121,7 +117,7 @@ services:
 复制最小化配置到compose中，不启动
 ```
   usque:
-    image: superng6/usque
+    image: ghcr.io/onikyannn/usque
     restart: unless-stopped
     environment:
       - USQUE_PORT=1080            # 对外监听端口（socks 默认 1080）

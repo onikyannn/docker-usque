@@ -11,8 +11,6 @@ on:
     - cron: '0 4 * * *'   # 每天 04:00 UTC 自动检查上游最新 tag
 
 env:
-  DOCKER_IMAGE: superng6/usque
-  GHCR_IMAGE: ghcr.io/superng6/usque
   UPSTREAM_REPO: https://github.com/Diniboy1123/usque.git
 
 permissions:
@@ -25,8 +23,15 @@ jobs:
     outputs:
       version: ${{ steps.set-version.outputs.version }}
       go_version: ${{ steps.set-version.outputs.go_version }}
+      image: ${{ steps.set-image.outputs.image }}
       skip: ${{ steps.check-exists.outputs.skip }}
     steps:
+      - name: 设置 GHCR 镜像名
+        id: set-image
+        run: |
+          owner=$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
+          echo "image=ghcr.io/${owner}/usque" >> "$GITHUB_OUTPUT"
+
       - name: 获取上游版本与 Go 版本
         id: set-version
         env:
@@ -63,24 +68,35 @@ jobs:
           echo "🎯 构建版本: $VERSION"
           echo "🧰 Go 版本: $GO_VERSION"
 
+      - name: 设置 Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: 登录到 GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: 检查版本是否已构建
         id: check-exists
+        env:
+          IMAGE: ${{ steps.set-image.outputs.image }}
+          VERSION: ${{ steps.set-version.outputs.version }}
         run: |
           # 手动触发时强制构建，不做存在检测
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "skip=false" >> "$GITHUB_OUTPUT"
             echo "🔨 手动触发，强制构建"
             exit 0
           fi
-          VERSION="${{ steps.set-version.outputs.version }}"
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            "https://hub.docker.com/v2/repositories/${{ env.DOCKER_IMAGE }}/tags/${VERSION}/")
-          if [ "$HTTP_STATUS" = "200" ]; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-            echo "⏭️ 版本 ${VERSION} 已存在于 Docker Hub，跳过构建"
+          if docker buildx imagetools inspect "${IMAGE}:${VERSION}" > /dev/null 2>&1 && \
+             docker buildx imagetools inspect "${IMAGE}:${VERSION}-tun" > /dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "⏭️ 版本 ${VERSION} 的 lite/tun 镜像已存在于 GHCR，跳过构建"
           else
-            echo "skip=false" >> $GITHUB_OUTPUT
-            echo "🔨 版本 ${VERSION} 不存在，开始构建"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "🔨 版本 ${VERSION} 的镜像不完整，开始构建"
           fi
 
   test:
@@ -129,17 +145,11 @@ jobs:
       - name: 设置 Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: 登录到 Docker Hub
-        uses: docker/login-action@v4
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: 登录到 GHCR
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
-          username: ${{ github.repository_owner }}
+          username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 构建并推送 ${{ matrix.variant.name }}（全平台）
@@ -154,17 +164,15 @@ jobs:
             GO_VERSION=${{ needs.prepare.outputs.go_version }}
             BUILD_VARIANT=${{ matrix.variant.name }}
           tags: |
-            ${{ env.DOCKER_IMAGE }}:${{ needs.prepare.outputs.version }}${{ matrix.variant.suffix }}
-            ${{ env.DOCKER_IMAGE }}:${{ matrix.variant.extra }}
-            ${{ env.GHCR_IMAGE }}:${{ needs.prepare.outputs.version }}${{ matrix.variant.suffix }}
-            ${{ env.GHCR_IMAGE }}:${{ matrix.variant.extra }}
+            ${{ needs.prepare.outputs.image }}:${{ needs.prepare.outputs.version }}${{ matrix.variant.suffix }}
+            ${{ needs.prepare.outputs.image }}:${{ matrix.variant.extra }}
           cache-from: type=gha,scope=${{ matrix.variant.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.variant.name }}
 
       - name: 检查 manifest
         run: |
           docker buildx imagetools inspect \
-            ${{ env.DOCKER_IMAGE }}:${{ needs.prepare.outputs.version }}${{ matrix.variant.suffix }}
+            ${{ needs.prepare.outputs.image }}:${{ needs.prepare.outputs.version }}${{ matrix.variant.suffix }}
 
   release:
     runs-on: ubuntu-latest
@@ -178,6 +186,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.prepare.outputs.version }}
+          IMAGE: ${{ needs.prepare.outputs.image }}
         run: |
           if gh release view "$VERSION" > /dev/null 2>&1; then
             echo "⏭️ Release $VERSION 已存在，跳过"
@@ -189,10 +198,8 @@ jobs:
 
           | 变体 | 镜像 |
           |------|------|
-          | lite | \`${{ env.DOCKER_IMAGE }}:${VERSION}\` |
-          | tun  | \`${{ env.DOCKER_IMAGE }}:${VERSION}-tun\` |
-          | lite (GHCR) | \`${{ env.GHCR_IMAGE }}:${VERSION}\` |
-          | tun  (GHCR) | \`${{ env.GHCR_IMAGE }}:${VERSION}-tun\` |
+          | lite | \`${IMAGE}:${VERSION}\` |
+          | tun  | \`${IMAGE}:${VERSION}-tun\` |
 
           上游版本：https://github.com/Diniboy1123/usque/releases/tag/${VERSION}"
           echo "✅ Release $VERSION 创建成功"
